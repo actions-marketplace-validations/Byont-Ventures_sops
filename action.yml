@@ -1,0 +1,114 @@
+name: "SOPS Utilities"
+description: "Multi-purpose SOPS utility action: install SOPS, load secrets, or execute commands."
+
+inputs:
+  operation:
+    description: "The operation to perform: 'install', 'load-secrets', or 'execute-command'"
+    required: true
+  sops-version:
+    description: "The version of SOPS to install."
+    required: false
+    default: "v3.10.2"
+  sops-age-key:
+    description: "The AGE private key for SOPS operations (required for load-secrets and execute-command)."
+    required: false
+  sops-file-path:
+    description: "Path to the SOPS encrypted file (required for load-secrets)."
+    required: false
+  sops-args:
+    description: "Arguments to pass to the SOPS command (required for execute-command)."
+    required: false
+  working-directory:
+    description: "The working directory to run the sops command in (for execute-command)."
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    # Install SOPS (runs for all operations)
+    - name: Install SOPS
+      shell: bash
+      run: |
+        SOPS_VERSION="${{ inputs.sops-version }}"
+        echo "Runner OS: $RUNNER_OS"
+        ARCH=$(uname -m)
+        echo "Architecture: $ARCH"
+
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          if [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
+            SOPS_ARCH="linux.arm64"
+          else # Default to amd64 for other Linux archs like x86_64
+            SOPS_ARCH="linux.amd64"
+          fi
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          if [ "$ARCH" == "arm64" ]; then 
+            SOPS_ARCH="darwin.arm64"
+          else # Default to amd64 for Intel Macs
+            SOPS_ARCH="darwin.amd64"
+          fi
+        else
+          echo "::error::Unsupported operating system: $RUNNER_OS"
+          exit 1
+        fi
+
+        echo "Downloading SOPS for $SOPS_ARCH"
+        curl -fS --retry 3 --retry-delay 5 -LO "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.${SOPS_ARCH}"
+
+        echo "Moving sops to /usr/local/bin/sops (requires sudo)"
+        sudo mv "sops-${SOPS_VERSION}.${SOPS_ARCH}" /usr/local/bin/sops
+
+        echo "Making sops executable (requires sudo)"
+        sudo chmod +x /usr/local/bin/sops
+
+        echo "Verifying sops installation:"
+        sops --version
+
+    # Load Secrets Operation
+    - name: Load Secrets from SOPS
+      if: inputs.operation == 'load-secrets'
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.sops-file-path }}" ]; then
+          echo "::error::sops-file-path is required for load-secrets operation"
+          exit 1
+        fi
+
+        echo "Decrypting secrets from ${{ inputs.sops-file-path }}..."
+        sops --decrypt ${{ inputs.sops-file-path }} | grep -v '^#' | grep -v '^$' | while IFS= read -r line; do
+          # Extract key (everything before the first '=')
+          key="${line%%=*}"
+          # Extract value (everything after the first '=')
+          value="${line#*=}"
+
+          # Check if key and value extraction worked reasonably and value is not empty
+          if [ "$key" != "$line" ] && [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              echo "$line" >> $GITHUB_ENV # Add the original KEY=VALUE line to env
+          else
+              echo "Warning: Skipping line, could not parse KEY=VALUE: $line" >&2
+          fi
+        done
+        echo "Secrets masked and loaded into environment."
+      env:
+        SOPS_AGE_KEY: ${{ inputs.sops-age-key }}
+
+    # Execute Command Operation
+    - name: Execute SOPS Command
+      if: inputs.operation == 'execute-command'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -z "${{ inputs.sops-args }}" ]; then
+          echo "::error::sops-args is required for execute-command operation"
+          exit 1
+        fi
+
+        echo "Executing SOPS command: sops ${{ inputs.sops-args }}"
+        sops ${{ inputs.sops-args }}
+      env:
+        SOPS_AGE_KEY: ${{ inputs.sops-age-key }}
+
+branding:
+  icon: "shield"
+  color: "green"
