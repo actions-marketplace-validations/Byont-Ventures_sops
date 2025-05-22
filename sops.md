@@ -1,5 +1,7 @@
 # SOPS Secrets Management Setup Guide
 
+Note that this is an opinionated way of working with sops, based on our preferences. There's many good ways. Probably even better ones out there. [Mozilla SOPS](https://github.com/getsops/sops) offers extensive documentaion.
+
 ## Prerequisites
 
 Ensure you have Homebrew installed, then set up the required tools:
