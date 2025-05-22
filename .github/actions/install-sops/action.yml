@@ -1,0 +1,54 @@
+name: "Install SOPS"
+description: "Downloads and installs a specific version of sops binary to /usr/local/bin"
+
+inputs:
+  sops-version:
+    description: "The version of sops to install (e.g., v3.10.2)"
+    required: true
+    default: "v3.10.2"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install sops binary
+      shell: bash
+      run: |
+        SOPS_VERSION="${{ inputs.sops-version }}"
+        echo "Runner OS: $RUNNER_OS"
+        ARCH=$(uname -m)
+        echo "Architecture: $ARCH"
+
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          if [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
+            SOPS_ARCH="linux.arm64"
+          else # Default to amd64 for other Linux archs like x86_64
+            SOPS_ARCH="linux.amd64"
+          fi
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          if [ "$ARCH" == "arm64" ]; then 
+            SOPS_ARCH="darwin.arm64"
+          else # Default to amd64 for Intel Macs
+            SOPS_ARCH="darwin.amd64"
+          fi
+        else
+          echo "::error::Unsupported operating system: $RUNNER_OS"
+          exit 1
+        fi
+
+        echo "Downloading SOPS for $SOPS_ARCH"
+        # Use curl with -fS to fail silently on server errors but show client errors
+        # Use --retry and --retry-delay for resilience 
+        curl -fS --retry 3 --retry-delay 5 -LO "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.${SOPS_ARCH}"
+
+        echo "Moving sops to /usr/local/bin/sops (requires sudo)"
+        sudo mv "sops-${SOPS_VERSION}.${SOPS_ARCH}" /usr/local/bin/sops
+
+        echo "Making sops executable (requires sudo)"
+        sudo chmod +x /usr/local/bin/sops
+
+        echo "Verifying sops installation:"
+        sops --version
+
+branding:
+  icon: "lock"
+  color: "blue"
