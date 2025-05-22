@@ -1,116 +1,88 @@
-# SOPS Utilities and GitHub Actions
+# SOPS Utilities GitHub Action
 
-This repository provides a collection of tools and GitHub Actions to streamline secrets management using [Mozilla SOPS](https://github.com/getsops/sops). It aims to simplify encrypting, decrypting, and managing sops-encrypted files both in CI/CD pipelines and local development environments.
+[![action-shield]][action-url]
 
-## Overview
+Multi-purpose SOPS utility action: install SOPS, load secrets into runner environment, or execute commands.
 
-The primary goal is to offer robust and easy-to-use mechanisms for handling secrets, particularly leveraging `age` encryption.
+This GitHub Action simplifies the use of [Mozilla SOPS](https://github.com/getsops/sops) in your CI/CD workflows, particularly with `age` encryption.
 
-Key features include:
+## Quick Start - Using the GitHub Action
 
-- GitHub Actions for decrypting secrets and executing SOPS commands within workflows.
-- A comprehensive guide for setting up SOPS locally, integrating with 1Password for secure `age` key handling.
+To use this action in your workflows, add one of the following steps depending upon your goal.
 
-## Getting Started
+### 1. Install SOPS
 
-### Prerequisites
+Quickly installs a specified version of SOPS into the runner environment. This is useful if you only need the SOPS binary available for subsequent steps.
 
-Before using the tools in this repository, ensure you have the following (as applicable to your use case):
+```yaml
+- name: Install SOPS
+  uses: byont-venture/sops@main
+  with:
+    operation: "install"
+    # sops-version: "v3.10.2" # Optional, uses default if not specified
+```
 
-- **For local development (refer to `sops.md`):**
-  - [SOPS](https://github.com/getsops/sops#installation)
-  - [age](https://github.com/FiloSottile/age#installation)
-  - [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (if using the `osops` helper)
-- **For GitHub Actions:**
-  - An `age` private key.
+### 2. Load Secrets into Environment
 
-### Local Development and `osops`
+Decrypts a SOPS-encrypted file and loads its key-value pairs as environment variables into the runner env. These variables are automatically masked in logs.
 
-For detailed instructions on setting up your local environment, generating `age` keys, configuring your editor for SOPS, and using the `osops` shell function for seamless secret handling with 1Password, please refer to:
+**Required:** You'll need to provide your `SOPS_AGE_KEY` as a GitHub secret.
 
-➡️ **[SOPS Secrets Management Setup Guide](./.github/actions/sops.md)**
+```yaml
+- name: Load Secrets from SOPS File
+  uses: byont-venture/sops@main
+  with:
+    operation: "load-secrets"
+    sops-age-key: ${{ secrets.SOPS_AGE_KEY }}
+    sops-file-path: "path/to/your/secrets.sops.yaml" # e.g., .env.sops or secrets/production.sops.json
+```
 
-This guide covers:
+### 3. Execute a SOPS Command
 
-- Generating and storing `age` keys.
-- The `osops` function to automatically fetch your `SOPS_AGE_KEY` from 1Password.
-- Common commands like `osops -e -i <file>` (encrypt) and `osops edit <file>`.
+Executes an arbitrary SOPS command. This is flexible for various use cases like encrypting files, decrypting specific fields, etc.
 
-### GitHub Actions
+**Required (conditionally):** `sops-age-key` is needed if the command involves decryption or encryption operations.
 
-This repository provides a unified GitHub Action, `action.yml` at the root, which can perform various SOPS operations based on its inputs. You can use it by referencing `your-org/your-repo@main` (replace `your-org/your-repo` with the actual path to this repository, e.g., `byont-ventures/sops@main`).
+```yaml
+- name: Decrypt a specific value using SOPS
+  uses: byont-venture/sops@main
+  with:
+    operation: "execute-command"
+    sops-age-key: ${{ secrets.SOPS_AGE_KEY }}
+    sops-args: '--decrypt --extract ''{"some_key"}'' secrets.enc.json'
+```
 
-**Unified SOPS Utility Action (`uses: byont-ventures/sops@main`)**
+## Detailed Action Configuration
 
-- **Purpose:** Installs SOPS, decrypts SOPS-encrypted files to environment variables, or executes arbitrary SOPS commands.
-- **Key Input:**
+The following inputs can be configured for the action:
 
-  - `operation`: (Required) Specifies the action to perform. Can be:
-    - `'install'`: Only installs SOPS.
-    - `'load-secrets'`: Decrypts a SOPS file and loads secrets into the environment.
-    - `'execute-command'`: Executes a given SOPS command.
+| Input               | Description                                                                | Default   | Required (for operation)                          |
+| ------------------- | -------------------------------------------------------------------------- | --------- | ------------------------------------------------- |
+| `operation`         | The operation to perform: `install`, `load-secrets`, or `execute-command`. |           | **Yes** (All)                                     |
+| `sops-version`      | The version of SOPS to install.                                            | `v3.10.2` | No                                                |
+| `sops-age-key`      | The AGE private key for SOPS operations.                                   |           | `load-secrets`, `execute-command` (if key needed) |
+| `sops-file-path`    | Path to the SOPS encrypted file.                                           |           | `load-secrets`                                    |
+| `sops-args`         | Arguments to pass to the SOPS command.                                     |           | `execute-command`                                 |
+| `working-directory` | The working directory to run the sops command in.                          | `.`       | No (`execute-command` only)                       |
 
-- **Common Inputs:**
+## Local SOPS Setup and Usage (with 1Password Integration)
 
-  - `sops-version`: (Optional) The version of SOPS to install. Defaults to `v3.10.2`.
-  - `sops-age-key`: (Required for `load-secrets` and `execute-command`) The AGE private key for SOPS operations.
-  - `sops-file-path`: (Required for `load-secrets`) Path to the SOPS encrypted file.
-  - `sops-args`: (Required for `execute-command`) Arguments to pass to the SOPS command.
-  - `working-directory`: (Optional, for `execute-command`) The working directory to run the sops command in. Defaults to `.`.
+For managing SOPS-encrypted files locally, especially when using `age` keys secured by 1Password, this repository provides detailed guidance and a helpful `osops` shell function.
 
-- **Example Usages:**
+The local setup enhances your development workflow by making it easy to:
 
-  1.  **Install SOPS only:**
+- Generate and securely store `age` keys using 1Password.
+- Use the `osops` shell function (detailed in `sops.md`) to simplify SOPS commands by automatically sourcing the `SOPS_AGE_KEY` from 1Password.
+- Perform common local commands like encrypting (`osops -e -i <file>`), decrypting (`osops -d <file>`), and interactively editing (`osops edit <file>`) sops-encrypted files.
 
-      ```yaml
-      - name: Install SOPS
-        uses: byont-ventures/sops@main
-        with:
-          operation: "install"
-          sops-version: "v3.10.2" # Optional, uses default if not specified
-      ```
+➡️ **For comprehensive instructions, please refer to the [SOPS Local Setup Guide](./sops.md)**
 
-  2.  **Decrypt and Load Secrets:**
+## Branding
 
-      ```yaml
-      - name: Decrypt and Load Secrets
-        uses: byont-ventures/sops@main
-        with:
-          operation: "load-secrets"
-          sops-age-key: ${{ secrets.SOPS_AGE_KEY }}
-          sops-file-path: ".env.sops"
-      ```
+This action is configured with the following branding for the GitHub Marketplace:
 
-      Secrets are automatically masked in logs.
-
-  3.  **Execute a SOPS Command (e.g., encrypt a file):**
-
-      ```yaml
-      - name: Encrypt a file in-place
-        uses: byont-ventures/sops@main
-        with:
-          operation: "execute-command"
-          sops-age-key: ${{ secrets.SOPS_AGE_KEY }}
-          sops-args: "-e -i my-secrets.yaml"
-          working-directory: "./config" # Optional
-      ```
-
-  4.  **Execute a SOPS Command (e.g., update keys):**
-      ```yaml
-      - name: Update keys for a file
-        uses: byont-ventures/sops@main
-        with:
-          operation: "execute-command"
-          sops-age-key: ${{ secrets.SOPS_AGE_KEY_FOR_UPDATE }} # May need a different key
-          sops-args: "updatekeys --yes my-infra-secrets.json"
-      ```
-
-## Repository Structure
-
-- `action.yml`: The main GitHub Action file for all SOPS utilities.
-- `.github/actions/`:
-  - `sops.md`: Detailed guide for local SOPS setup and usage with 1Password.
-- `.sops.yaml`: (Typically located in repositories using SOPS, not necessarily this one unless managing its own config). Configuration file for SOPS, defining encryption rules, key groups, etc.
+- Icon: `shield`
+- Color: `green`
 
 ## Contributing
 
@@ -118,4 +90,7 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 ## License
 
-MIT
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details (assuming a LICENSE file exists or will be added).
+
+[action-shield]: https://img.shields.io/badge/GitHub_Action-SOPS_Utilities-green?style=for-the-badge&logo=githubactions
+[action-url]: https://github.com/marketplace/actions/sops-utilities
